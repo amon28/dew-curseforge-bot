@@ -212,7 +212,7 @@ client.once('clientReady', async () => {
   //channel.send('✅ Bot is online and can send messages!');
 
   checkAllMods(); // run immediately on startup
-  setInterval(checkAllMods, 30 * 60 * 1000); // 30 minutes
+  setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
 });
 
 
