@@ -211,7 +211,7 @@ client.once('clientReady', async () => {
   const channel = await client.channels.fetch(CHANNEL_ID);
   //channel.send('✅ Bot is online and can send messages!');
 
-  checkAllMods(); // run immediately on startup
+  //checkAllMods(); // run immediately on startup
   setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
 });
 
