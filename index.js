@@ -115,12 +115,39 @@ function formatChangelog(html) {
     .trim();
 }
 
+function getTimeAndDate(){
+  const now = new Date();
+  return `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`
+}
+
+async function checkAllMods() {
+  console.log(`------------------------------------------------`)
+  console.log(`🔷 Checking Addon updates — ${getTimeAndDate()}`);
+
+  let anyUpdated = false; 
+
+  for (const modId of MOD_IDS) {
+    try {
+      const updated = await checkModUpdates(modId);
+      if (updated) {
+        anyUpdated = true;
+      }
+    } catch (err) {
+      console.error(`Error checking mod ${modId}:`, err);
+    }
+  }
+
+  if (!anyUpdated) {
+    console.log("ℹ️ There is no addon update.");
+  }
+}
+
 async function checkModUpdates(modId) {
   const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files`, {
     method: 'GET',
     headers: { 
-        'Accept': 'application/json',
-        'x-api-key': API_KEY 
+      'Accept': 'application/json',
+      'x-api-key': API_KEY 
     }
   });
 
@@ -128,20 +155,19 @@ async function checkModUpdates(modId) {
     const text = await res.text();
     console.error(`❌ Failed to fetch mod ${modId}: ${res.status} ${res.statusText}`);
     console.error(`Response: ${text}`);
-    return;
+    return false;
   }
 
   const data = await res.json();
 
   if (!data.data || data.data.length === 0) {
-    console.warn(`⚠ No files found for mod ${modId}`);
-    return;
+    console.warn(`⚠️ No files found for mod ${modId}`);
+    return false;
   }
 
-  const latest = data.data[0]; // newest file
+  const latest = data.data[0];
   const stored = lastFileIds[modId];
 
-  // Post if there's no stored ID yet OR if the latest file is different
   if (!stored || latest.id !== stored.file_id) {
     const addonName = stored?.name || await getModName(modId);
     lastFileIds[modId] = {
@@ -150,37 +176,28 @@ async function checkModUpdates(modId) {
     };
     saveLastFileIds();
 
-    // Optional: only post Bedrock addon files
     if (!latest.fileName.endsWith('.mcaddon') && !latest.fileName.endsWith('.mcpack')) {
-      console.log(`ℹ Skipping ${latest.fileName} — not a Bedrock addon`);
-      return;
+      console.log(`⚠️ Skipping ${latest.fileName} — not a Bedrock addon`);
+      return false;
     }
 
     const channel = await client.channels.fetch(CHANNEL_ID);
     const changelog = await getChangelog(modId, latest.id);
-    const curseForgeProjectUrl = await getProjectLink(modId)
-    const mcpedlProjectUrl = `https://mcpedl.com/${curseForgeProjectUrl.split("addons/")[1]}`
-    let textMsg = `# 📢 **${addonName}**`
-    if(changelog.trim() != ""){
-      textMsg = `${textMsg}\n**Changelogs:**\n${formatChangelog(changelog)}`
-    } 
-    textMsg = `${textMsg}\n**Downloads:**\n🔷 ${mcpedlProjectUrl}\n🔶 ${curseForgeProjectUrl}`
-    await channel.send(`${textMsg}`);
-    console.log(`✅ Posted update for mod ${addonName}`);
-  } else {
-    console.log(`ℹ No new file for mod ${modId} (latest ID: ${latest.id})`);
-  }
+    const curseForgeProjectUrl = await getProjectLink(modId);
+    const mcpedlProjectUrl = `https://mcpedl.com/${curseForgeProjectUrl.split("addons/")[1]}`;
 
-}
-
-async function checkAllMods() {
-  for (const modId of MOD_IDS) {
-    try {
-      await checkModUpdates(modId);
-    } catch (err) {
-      console.error(`Error checking mod ${modId}:`, err);
+    let textMsg = `# 📢 **${addonName}**`;
+    if (changelog.trim() !== "") {
+      textMsg += `\n**Changelogs:**\n${formatChangelog(changelog)}`;
     }
+    textMsg += `\n**Downloads:**\n🔷 ${mcpedlProjectUrl}\n🔶 ${curseForgeProjectUrl}`;
+
+    await channel.send(textMsg);
+    console.log(`✅ Posted update for addon ${addonName}`);
+    return true; 
   }
+
+  return false;
 }
 
 // Load saved IDs from file (if it exists)
@@ -206,12 +223,12 @@ function saveLastFileIds() {
 }
 
 client.once('clientReady', async () => {
+  console.log(`➡️ Starting ${getTimeAndDate()}`)
   console.log(`✅ Logged in as ${client.user.tag}`);
-
   const channel = await client.channels.fetch(CHANNEL_ID);
   //channel.send('✅ Bot is online and can send messages!');
 
-  //checkAllMods(); // run immediately on startup
+  checkAllMods(); // run immediately on startup
   setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
 });
 
