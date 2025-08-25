@@ -51,7 +51,7 @@ async function getModsByAuthor() {
     index += 50;
   }
   
-  MOD_IDS = allMods.map((mod)=>mod.name)
+  MOD_IDS = allMods.map((mod)=>mod.id)
   console.log(`🔃 Getting all addons: ${MOD_IDS.length} | ${getTimeAndDate()}`)
 }
 
@@ -269,7 +269,7 @@ client.once('clientReady', async () => {
   //testMessage()
   //console.log(await getRawJsonData(MOD_IDS[1]))
   await getModsByAuthor()
-  checkAllMods(); // run immediately on startup
+  checkAllMods();
   setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
   setInterval(getModsByAuthor, 24 * 60 * 60 * 1000);
 });
