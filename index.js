@@ -9,7 +9,8 @@ dotenv.config();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const API_KEY = process.env.CURSEFORGE_KEY; 
-const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID; 
+const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
+const TEST_CHANNEL_ID = process.env.DISCORD_TEST_CHANNEL_ID
 const CREATOR_ID = process.env.CREATOR_ID
 const SAVE_FILE = 'lastFileIds.json';
 const lastFileIds = loadLastFileIds();
@@ -55,71 +56,6 @@ async function getModsByAuthor() {
   console.log(`🔃 Getting all addons: ${MOD_IDS.length} | ${getTimeAndDate()}`)
 }
 
-
-async function getProjectLink(modId) {
-  const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
-    headers: {
-      'Accept': 'application/json',
-      'x-api-key': API_KEY
-    }
-  });
-
-  if (!res.ok) {
-    console.error(`❌ Failed to fetch mod info: ${res.status} ${res.statusText}`);
-    return null;
-  }
-
-  const data = await res.json();
-  return data.data.links.websiteUrl; // e.g. "https://www.curseforge.com/minecraft/mc-addons/my-addon"
-}
-
-async function getModSummary(modId) {
-  const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
-    headers: { 'x-api-key': API_KEY }
-  });
-  const data = await res.json();
-  return data.data.summary
-}
-
-async function getModName(modId) {
-  const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-      'x-api-key': API_KEY
-    }
-  });
-
-  if (!res.ok) {
-    console.error(`❌ Failed to fetch mod info for ${modId}: ${res.status} ${res.statusText}`);
-    return null;
-  }
-
-  const data = await res.json();
-  return data.data.name; // This is the mod/project name
-}
-
-async function getChangelog(modId, fileId) {
-  const res = await fetch(
-    `https://api.curseforge.com/v1/mods/${modId}/files/${fileId}/changelog`,
-    {
-      headers: {
-        'Accept': 'application/json',
-        'x-api-key': API_KEY
-      }
-    }
-  );
-
-  if (!res.ok) {
-    console.error(`❌ Failed to fetch changelog: ${res.status} ${res.statusText}`);
-    return null;
-  }
-
-  const data = await res.json();
-  // The changelog is usually HTML in data.data
-  return data.data;
-}
-
 function formatChangelog(html) {
   return html
     // Replace list items with "- text"
@@ -149,12 +85,17 @@ async function checkAllMods() {
   console.log(`🔷 Checking Addon updates — ${getTimeAndDate()}`);
 
   let anyUpdated = false; 
+  let update_success = 0
+  let no_updates = 0
 
   for (const modId of MOD_IDS) {
     try {
       const updated = await checkModUpdates(modId);
       if (updated) {
         anyUpdated = true;
+        update_success++
+      }else{
+        no_updates++
       }
     } catch (err) {
       console.error(`Error checking mod ${modId}:`, err);
@@ -163,67 +104,75 @@ async function checkAllMods() {
 
   if (!anyUpdated) {
     console.log("ℹ️ There is no addon update.");
+  }else{
+    console.log(`➡️ Updated: ${update_success}`)
+    console.log(`➡️ No Updates: ${no_updates}`)
   }
+  update_success = 0
+  no_updates = 0
 }
 
 async function checkModUpdates(modId) {
-  const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files`, {
-    method: 'GET',
-    headers: { 
-      'Accept': 'application/json',
-      'x-api-key': API_KEY 
-    }
+  const modRes = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
+    headers: { 'Accept': 'application/json', 'x-api-key': API_KEY }
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error(`❌ Failed to fetch mod ${modId}: ${res.status} ${res.statusText}`);
-    console.error(`Response: ${text}`);
+  if (!modRes.ok) {
+    console.error(`❌ Failed to fetch mod info for ${modId}: ${modRes.status} ${modRes.statusText}`);
     return false;
   }
+  const modData = (await modRes.json()).data;
 
-  const data = await res.json();
-
-  if (!data.data || data.data.length === 0) {
+  const filesRes = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files`, {
+    headers: { 'Accept': 'application/json', 'x-api-key': API_KEY }
+  });
+  if (!filesRes.ok) {
+    console.error(`❌ Failed to fetch files for ${modId}: ${filesRes.status} ${filesRes.statusText}`);
+    return false;
+  }
+  const filesData = await filesRes.json();
+  if (!filesData.data || filesData.data.length === 0) {
     console.warn(`⚠️ No files found for mod ${modId}`);
     return false;
   }
 
-  const latest = data.data[0];
+  const latest = filesData.data[0];
   const stored = lastFileIds[modId];
 
+  // Check if new file
   if (!stored || latest.id !== stored.file_id) {
-    const addonName = stored?.name || await getModName(modId);
-    lastFileIds[modId] = {
-      name: addonName,
-      file_id: latest.id
-    };
+    lastFileIds[modId] = { name: modData.name, file_id: latest.id };
     saveLastFileIds();
 
+    // Skip if not a Bedrock addon
     if (!latest.fileName.endsWith('.mcaddon') && !latest.fileName.endsWith('.mcpack')) {
       console.log(`⚠️ Skipping ${latest.fileName} — not a Bedrock addon`);
       return false;
     }
 
-    const channel = await client.channels.fetch(CHANNEL_ID);
-    const changelog = await getChangelog(modId, latest.id);
-    const summary = await getModSummary(modId)
-    const curseForgeProjectUrl = await getProjectLink(modId);
+    const changelogRes = await fetch(
+      `https://api.curseforge.com/v1/mods/${modId}/files/${latest.id}/changelog`,
+      { headers: { 'Accept': 'application/json', 'x-api-key': API_KEY } }
+    );
+    const changelog = changelogRes.ok ? (await changelogRes.json()).data : "";
+
+    // Build message
+    const curseForgeProjectUrl = modData.links.websiteUrl;
     const mcpedlProjectUrl = `https://mcpedl.com/${curseForgeProjectUrl.split("addons/")[1]}`;
 
-    let textMsg = `# 📢 **${addonName}**`;
+    let textMsg = `# 📢 **${modData.name}**`;
     if (changelog.trim() !== "") {
       textMsg += `\n**Changelogs:**\n${formatChangelog(changelog)}`;
-    }else{
-      textMsg += `\n**New Release**:\n${summary}`
+    } else {
+      textMsg += `\n**New Release**:\n${modData.summary}`;
     }
     textMsg += `\n**Downloads:**\n<:mcpedl:1409488865215123547> ${mcpedlProjectUrl}\n<:curseforge:1409489206786654388> ${curseForgeProjectUrl}`;
 
+    const channel = await client.channels.fetch(CHANNEL_ID);
     await channel.send(textMsg);
-    console.log(`✅ Posted update for addon ${addonName}`);
-    return true; 
-  }
 
+    console.log(`✅ Posted update for addon ${modData.name}`);
+    return true;
+  }
   return false;
 }
 
@@ -251,13 +200,13 @@ function saveLastFileIds() {
 
 //For testing
 async function testMessage(){
-  const channel = await client.channels.fetch("988605733924900895");
+  const channel = await client.channels.fetch(TEST_CHANNEL_ID);
   
 }
 
 //Message channel when bot is running
 async function botOnlineMessage(){
-  const channel = await client.channels.fetch("988605733924900895");
+  const channel = await client.channels.fetch(TEST_CHANNEL_ID);
   channel.send(`<:mcpedl:1409488865215123547><:curseforge:1409489206786654388>✅ Bot is online and can send messages! ${getTimeAndDate()}`);
 }
 
