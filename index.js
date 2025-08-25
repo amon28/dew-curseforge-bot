@@ -190,7 +190,7 @@ async function checkModUpdates(modId) {
     if (changelog.trim() !== "") {
       textMsg += `\n**Changelogs:**\n${formatChangelog(changelog)}`;
     }
-    textMsg += `\n**Downloads:**\n🔷 ${mcpedlProjectUrl}\n🔶 ${curseForgeProjectUrl}`;
+    textMsg += `\n**Downloads:**\n<:mcpedl:1409488865215123547> ${mcpedlProjectUrl}\n<:curseforge:1409489206786654388> ${curseForgeProjectUrl}`;
 
     await channel.send(textMsg);
     console.log(`✅ Posted update for addon ${addonName}`);
@@ -222,13 +222,20 @@ function saveLastFileIds() {
   }
 }
 
+//For testing
+async function testMessage(){
+  const channel = await client.channels.fetch("988605733924900895");
+  channel.send('✅ Bot is online and can send messages!');
+  channel.send('<:mcpedl:1409488865215123547> MCPEDL Emoji');
+  channel.send('<:curseforge:1409489206786654388> Curseforge Emoji');
+}
+
 client.once('clientReady', async () => {
   console.log(`➡️ Starting ${getTimeAndDate()}`)
   console.log(`✅ Logged in as ${client.user.tag}`);
-  const channel = await client.channels.fetch(CHANNEL_ID);
-  //channel.send('✅ Bot is online and can send messages!');
-
-  checkAllMods(); // run immediately on startup
+  
+  //testMessage()
+  //checkAllMods(); // run immediately on startup
   setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
 });
 
