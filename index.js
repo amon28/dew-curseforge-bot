@@ -265,11 +265,11 @@ client.once('clientReady', async () => {
   console.log(`➡️ Starting ${getTimeAndDate()}`)
   console.log(`✅ Logged in as ${client.user.tag}`);
   
-  //checkAllMods(); // run immediately on startup
   botOnlineMessage()
   //testMessage()
   //console.log(await getRawJsonData(MOD_IDS[1]))
   await getModsByAuthor()
+  checkAllMods(); // run immediately on startup
   setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
   setInterval(getModsByAuthor, 24 * 60 * 60 * 1000);
 });
