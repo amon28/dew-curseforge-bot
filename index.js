@@ -225,9 +225,15 @@ function saveLastFileIds() {
 //For testing
 async function testMessage(){
   const channel = await client.channels.fetch("988605733924900895");
-  channel.send('✅ Bot is online and can send messages!');
+  channel.send(`✅ Bot is online and can send messages! ${getTimeAndDate()}`);
   channel.send('<:mcpedl:1409488865215123547> MCPEDL Emoji');
   channel.send('<:curseforge:1409489206786654388> Curseforge Emoji');
+}
+
+//Message channel when bot is running
+async function botOnlineMessage(){
+  const channel = await client.channels.fetch("988605733924900895");
+  channel.send(`<:mcpedl:1409488865215123547><:curseforge:1409489206786654388>✅ Bot is online and can send messages! ${getTimeAndDate()}`);
 }
 
 client.once('clientReady', async () => {
@@ -236,6 +242,7 @@ client.once('clientReady', async () => {
   
   //testMessage()
   //checkAllMods(); // run immediately on startup
+  botOnlineMessage()
   setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
 });
 
