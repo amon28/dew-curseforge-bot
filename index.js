@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import fs from 'fs';
+import { DateTime } from 'luxon';
 
 dotenv.config();
 
@@ -9,36 +10,51 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const API_KEY = process.env.CURSEFORGE_KEY; 
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID; 
-const MOD_IDS = [
-917260, // Improved Backpack
-1288391, //Soul Bound Items
-1313134, //Uncrafting table
-1316428, //Simple Mob Health
-1042095, //Player Graves
-1328392, //Quick Deposit
-1171565, //Fans and grinders
-1096015, //Portal Gun
-//1223991, //Spray Paint
-//1117484, //One sided glass
-1298639, //Superior Torch
-1233331, //Item Pedestal
-1283902, //NPC Expansion
-922661, //Simple Waystone
-1021682, //Disenchanter
-//1036162, //Dew OreVein miner
-//1032357, //Tree capitator
-//1210586, //Carry Animals
-//1056349, //Player Inventory Sorter
-1049942, //Easy Bonsai
-//1022840, //Level Storage
-//1034810, //Chest Sorter
-//1067327, //Auto Inventory
-1036647, //Dynamic Lighting
-];
-
+const CREATOR_ID = process.env.CREATOR_ID
 const SAVE_FILE = 'lastFileIds.json';
-
 const lastFileIds = loadLastFileIds();
+const GAME_ID = 78022 //Minecraft Bedrock
+
+let MOD_IDS = []
+
+async function getRawJsonData(modId) {
+  const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
+  headers: {
+    'Accept': 'application/json',
+    'x-api-key': API_KEY
+  }
+  });
+
+  if (!res.ok) {
+    console.error(`❌ Failed to fetch mod info: ${res.status} ${res.statusText}`);
+    return null;
+  }
+
+  const data = await res.json();
+  return data.data
+}
+
+async function getModsByAuthor() {
+  let index = 0;
+  let allMods = [];
+
+  while(true){
+    const url = `https://api.curseforge.com/v1/mods/search?gameId=${GAME_ID}&authorId=${CREATOR_ID}&pageSize=50&&index=${index}`;
+    const res = await fetch(url, { headers: { 'x-api-key': API_KEY } });
+    const json = await res.json();
+    
+    // Filter to exact match on author name
+    const myMods = json.data.filter((mod)=>mod.authors[0].id == CREATOR_ID)
+    allMods = allMods.concat(myMods);
+
+    if (json.data.length < 50) break; // no more pages
+    index += 50;
+  }
+  
+  MOD_IDS = allMods.map((mod)=>mod.name)
+  console.log(`🔃 Getting all addons: ${MOD_IDS.length} | ${getTimeAndDate()}`)
+}
+
 
 async function getProjectLink(modId) {
   const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
@@ -57,6 +73,13 @@ async function getProjectLink(modId) {
   return data.data.links.websiteUrl; // e.g. "https://www.curseforge.com/minecraft/mc-addons/my-addon"
 }
 
+async function getModSummary(modId) {
+  const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
+    headers: { 'x-api-key': API_KEY }
+  });
+  const data = await res.json();
+  return data.data.summary
+}
 
 async function getModName(modId) {
   const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
@@ -116,8 +139,9 @@ function formatChangelog(html) {
 }
 
 function getTimeAndDate(){
-  const now = new Date();
-  return `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`
+  const now = DateTime.now().setZone("Asia/Manila")
+  const timeAndDate = now.toFormat("M/d/yyyy h:mm:ss a");
+  return `${timeAndDate}`
 }
 
 async function checkAllMods() {
@@ -183,12 +207,15 @@ async function checkModUpdates(modId) {
 
     const channel = await client.channels.fetch(CHANNEL_ID);
     const changelog = await getChangelog(modId, latest.id);
+    const summary = await getModSummary(modId)
     const curseForgeProjectUrl = await getProjectLink(modId);
     const mcpedlProjectUrl = `https://mcpedl.com/${curseForgeProjectUrl.split("addons/")[1]}`;
 
     let textMsg = `# 📢 **${addonName}**`;
     if (changelog.trim() !== "") {
       textMsg += `\n**Changelogs:**\n${formatChangelog(changelog)}`;
+    }else{
+      textMsg += `\n**New Release**:\n${summary}`
     }
     textMsg += `\n**Downloads:**\n<:mcpedl:1409488865215123547> ${mcpedlProjectUrl}\n<:curseforge:1409489206786654388> ${curseForgeProjectUrl}`;
 
@@ -225,9 +252,7 @@ function saveLastFileIds() {
 //For testing
 async function testMessage(){
   const channel = await client.channels.fetch("988605733924900895");
-  channel.send(`✅ Bot is online and can send messages! ${getTimeAndDate()}`);
-  channel.send('<:mcpedl:1409488865215123547> MCPEDL Emoji');
-  channel.send('<:curseforge:1409489206786654388> Curseforge Emoji');
+  
 }
 
 //Message channel when bot is running
@@ -240,10 +265,13 @@ client.once('clientReady', async () => {
   console.log(`➡️ Starting ${getTimeAndDate()}`)
   console.log(`✅ Logged in as ${client.user.tag}`);
   
-  //testMessage()
   //checkAllMods(); // run immediately on startup
   botOnlineMessage()
+  //testMessage()
+  //console.log(await getRawJsonData(MOD_IDS[1]))
+  await getModsByAuthor()
   setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
+  setInterval(getModsByAuthor, 24 * 60 * 60 * 1000);
 });
 
 
