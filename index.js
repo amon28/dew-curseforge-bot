@@ -6,15 +6,21 @@ import { DateTime } from 'luxon';
 
 dotenv.config();
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ intents: [
+  GatewayIntentBits.Guilds,
+  GatewayIntentBits.GuildMessages,
+  GatewayIntentBits.MessageContent
+]});
 
 const API_KEY = process.env.CURSEFORGE_KEY; 
-const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
-const TEST_CHANNEL_ID = process.env.DISCORD_TEST_CHANNEL_ID
 const CREATOR_ID = process.env.CREATOR_ID
 const SAVE_FILE = 'lastFileIds.json';
 const lastFileIds = loadLastFileIds();
 const GAME_ID = 78022 //Minecraft Bedrock
+const CHANNEL_MAP_PATH = "channelMap.json"
+const channelMap = loadChannelMap();
+const CHANNEL_IDS = channelMap['announcement'];
+const TEST_CHANNEL_IDS = channelMap['test']
 
 let MOD_IDS = []
 
@@ -167,8 +173,10 @@ async function checkModUpdates(modId) {
     }
     textMsg += `\n**Downloads:**\n<:mcpedl:1409488865215123547> ${mcpedlProjectUrl}\n<:curseforge:1409489206786654388> ${curseForgeProjectUrl}`;
 
-    const channel = await client.channels.fetch(CHANNEL_ID);
-    await channel.send(textMsg);
+    for(let CHANNEL_ID of CHANNEL_IDS){
+      const channel = await client.channels.fetch(CHANNEL_ID);
+      await channel.send(textMsg);
+    }    
 
     console.log(`✅ Posted update for addon ${modData.name}`);
     return true;
@@ -198,16 +206,43 @@ function saveLastFileIds() {
   }
 }
 
+function loadChannelMap(){
+  if (fs.existsSync(CHANNEL_MAP_PATH)) {
+    try {
+      const data = fs.readFileSync(CHANNEL_MAP_PATH, 'utf8');
+      return JSON.parse(data);
+    } catch (err) {
+      console.error('Error reading save file:', err);
+    }
+  }
+  const defaultValue = {
+    'announcement':[],
+    'test':[]
+  }
+  return defaultValue;
+}
+
+function saveChannelMap() {
+  try {
+    fs.writeFileSync(CHANNEL_MAP_PATH, JSON.stringify(channelMap, null, 2));
+  } catch (err) {
+    console.error('Error writing save file:', err);
+  }
+}
+
 //For testing
 async function testMessage(){
-  const channel = await client.channels.fetch(TEST_CHANNEL_ID);
-  
+  for(let CHANNEL_ID of TEST_CHANNEL_IDS){
+    const channel = await client.channels.fetch(CHANNEL_ID);
+  }
 }
 
 //Message channel when bot is running
 async function botOnlineMessage(){
-  const channel = await client.channels.fetch(TEST_CHANNEL_ID);
-  channel.send(`<:mcpedl:1409488865215123547><:curseforge:1409489206786654388>✅ Bot is online and can send messages! ${getTimeAndDate()}`);
+  for(let CHANNEL_ID of TEST_CHANNEL_IDS){
+    const channel = await client.channels.fetch(CHANNEL_ID);
+    channel.send(`<:mcpedl:1409488865215123547><:curseforge:1409489206786654388>✅ Bot is online and can send messages! ${getTimeAndDate()}`);
+  }
 }
 
 client.once('clientReady', async () => {
@@ -223,5 +258,104 @@ client.once('clientReady', async () => {
   setInterval(getModsByAuthor, 24 * 60 * 60 * 1000);
 });
 
+client.on("messageCreate", async (message) => {
+  if (!message.content.startsWith("/daub")) return;
+  if (!message.guild || !message.member) return;
+  if (!message.member.permissions.has("Administrator")) {
+    return message.reply("❌ You need admin permissions to set the update channel.");
+  }
+
+  const subCommandArgs = message.content.split(" ")
+  const mainSubCommand = subCommandArgs[1]?.trim().toLowerCase();
+
+  if (!mainSubCommand) {
+    return message.reply("⚠️ Please specify a subcommand (e.g., `/daub setchannel`).");
+  }
+
+  switch(mainSubCommand){
+    case "setchannel":
+      var channelType = subCommandArgs[2]?.trim().toLowerCase();
+      var channelId = subCommandArgs[3]?.trim().toLowerCase();
+      if(!channelType){
+        return message.reply("⚠️ Please specify a channel type (e.g., `announcement`).");
+      }
+      if (!channelMap[channelType]) {
+        return message.reply(`⚠️ Unknown channel type: \`${channelType}\`. Valid types: ${Object.keys(channelMap).join(", ")}`);
+      }
+      if(!channelId){
+        return message.reply("⚠️ Please specify a valid channel Id.");
+      }    
+      if (!channelMap[channelType].includes(channelId)) {
+        channelMap[channelType].push(channelId);
+        saveChannelMap();
+        message.reply(`✅ ${channelType} channel set to <#${channelId}>`);
+      } else {
+        message.reply(`⚠️ Channel <#${channelId}> is already set for \`${channelType}\`.`);
+      }
+    break;
+
+    case "removechannel": 
+      var channelType = subCommandArgs[2]?.trim().toLowerCase();
+      var channelId = subCommandArgs[3]?.trim();
+
+      if (!channelType || !channelMap[channelType]) {
+        return message.reply(`⚠️ Unknown channel type: \`${channelType}\`. Valid types: ${Object.keys(channelMap).join(", ")}`);
+      }
+
+      if (!channelId) {
+        return message.reply("⚠️ Please specify a valid channel ID to remove.");
+      }
+
+      const index = channelMap[channelType].indexOf(channelId);
+      if (index === -1) {
+        return message.reply(`⚠️ Channel <#${channelId}> is not set for \`${channelType}\`.`);
+      }
+
+      channelMap[channelType].splice(index, 1);
+      saveChannelMap();
+      message.reply(`🗑️ Removed channel <#${channelId}> from \`${channelType}\`.`);
+    break;
+
+    case "listchannels":
+      const lines = Object.entries(channelMap).map(([type, ids]) => {
+        return `**${type}**: ${ids.map(id => `<#${id}>`).join(", ") || "None"}`;
+      });
+      message.reply(`📋 Saved channels:\n${lines.join("\n")}`);
+    break;
+
+    case "ping":
+      const entries = Object.entries(channelMap)
+      for(let [type, id] of entries){
+        const channel = await client.channels.fetch(id);
+        channel.send(`✅Ping ${type}!`);
+      }
+    break;
+
+    case "clearchannel":
+      const typeToClear = subCommandArgs[2]?.trim().toLowerCase();
+      if (!channelMap[typeToClear]) {
+        return message.reply(`⚠️ Unknown channel type: \`${typeToClear}\`.`);
+      }
+      channelMap[typeToClear] = [];
+      saveChannelMap();
+      message.reply(`🧹 Cleared all channels for \`${typeToClear}\`.`);
+    break;
+
+    case "help":
+        message.reply(`📖 **Daub Bot Commands**
+      \`\`\`
+      /daub setchannel <type> <channelId>   → Save a channel for updates
+      /daub removechannel <type> <channelId> → Remove a saved channel
+      /daub listchannels                    → Show all saved channels
+      /daub clearchannel <type>            → Clear all channels of a type
+      /daub ping                            → Pings all channel in config
+      /daub help                            → Show this help message
+      \`\`\``);
+    break;
+
+    default:
+      message.reply("⚠️ Please specify a valid subcommand (e.g., `/daub setchannel`).");
+  }
+});
 
 client.login(process.env.DISCORD_TOKEN);
