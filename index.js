@@ -228,8 +228,8 @@ function loadConfig(){
   }
   const defaultValue = {
     "_comment": "All time values are in hours",
-    'CHECK_ALL_MODS_UPDATE_TIME': 60,
-    'REGET_ALL_MODS_TIME': 24
+    'CHECK_ALL_MODS_UPDATE_TIME': 1,
+    'REGET_ALL_MODS_TIME': 6
   }
   try {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaultValue, null, 2));
@@ -273,6 +273,8 @@ async function botOnlineMessage(){
 
 client.once('clientReady', async () => {
   console.log(`➡️ Starting ${getTimeAndDate()}`)
+  console.log(`➡️ Reget Time ${REGET_ALL_MODS_TIME}`)
+  console.log(`➡️ Update Time ${CHECK_ALL_MODS_UPDATE_TIME}`)
   console.log(`✅ Logged in as ${client.user.tag}`);
   
   botOnlineMessage()
