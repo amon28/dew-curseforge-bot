@@ -50,7 +50,7 @@ async function getModsByAuthor() {
   let allMods = [];
 
   while(true){
-    const url = `https://api.curseforge.com/v1/mods/search?gameId=${GAME_ID}&authorId=${CREATOR_ID}&pageSize=50&&index=${index}`;
+    const url = `https://api.curseforge.com/v1/mods/search?gameId=${GAME_ID}&authorId=${CREATOR_ID}&pageSize=50&index=${index}`;
     const res = await fetch(url, { headers: { 'x-api-key': API_KEY } });
     const json = await res.json();
     
