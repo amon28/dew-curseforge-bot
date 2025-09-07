@@ -21,6 +21,10 @@ const CHANNEL_MAP_PATH = "channelMap.json"
 const channelMap = loadChannelMap();
 const CHANNEL_IDS = channelMap['announcement'];
 const TEST_CHANNEL_IDS = channelMap['test']
+const CONFIG_FILE = 'config.json'
+const CONFIG = loadConfig()
+const CHECK_ALL_MODS_UPDATE_TIME = CONFIG['CHECK_ALL_MODS_UPDATE_TIME']
+const REGET_ALL_MODS_TIME = CONFIG['REGET_ALL_MODS_TIME']
 
 let MOD_IDS = []
 
@@ -197,15 +201,6 @@ function loadLastFileIds() {
   return {};
 }
 
-// Save IDs to file
-function saveLastFileIds() {
-  try {
-    fs.writeFileSync(SAVE_FILE, JSON.stringify(lastFileIds, null, 2));
-  } catch (err) {
-    console.error('Error writing save file:', err);
-  }
-}
-
 function loadChannelMap(){
   if (fs.existsSync(CHANNEL_MAP_PATH)) {
     try {
@@ -220,6 +215,37 @@ function loadChannelMap(){
     'test':[]
   }
   return defaultValue;
+}
+
+function loadConfig(){
+  if (fs.existsSync(CHANNEL_MAP_PATH)) {
+    try {
+      const data = fs.readFileSync(CHANNEL_MAP_PATH, 'utf8');
+      return JSON.parse(data);
+    } catch (err) {
+      console.error('Error reading save file:', err);
+    }
+  }
+  const defaultValue = {
+    "_comment": "All time values are in hours",
+    'CHECK_ALL_MODS_UPDATE_TIME': 60,
+    'REGET_ALL_MODS_TIME': 24
+  }
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaultValue, null, 2));
+  } catch (err) {
+    console.error('Error writing save file:', err);
+  }
+  return defaultValue
+}
+
+// Save IDs to file
+function saveLastFileIds() {
+  try {
+    fs.writeFileSync(SAVE_FILE, JSON.stringify(lastFileIds, null, 2));
+  } catch (err) {
+    console.error('Error writing save file:', err);
+  }
 }
 
 function saveChannelMap() {
@@ -254,8 +280,8 @@ client.once('clientReady', async () => {
   //console.log(await getRawJsonData(MOD_IDS[1]))
   await getModsByAuthor()
   checkAllMods();
-  setInterval(checkAllMods, 60 * 60 * 1000); // 1 hour
-  setInterval(getModsByAuthor, 24 * 60 * 60 * 1000);
+  setInterval(checkAllMods, CHECK_ALL_MODS_UPDATE_TIME * 60 * 60 * 1000); // 1 hour
+  setInterval(getModsByAuthor, REGET_ALL_MODS_TIME * 60 * 60 * 1000);
 });
 
 client.on("messageCreate", async (message) => {
@@ -274,6 +300,7 @@ client.on("messageCreate", async (message) => {
 
   switch(mainSubCommand){
     case "setchannel":
+      console.log(`🔃Set Channel Command Ran. ${getTimeAndDate()}`)
       var channelType = subCommandArgs[2]?.trim().toLowerCase();
       var channelId = subCommandArgs[3]?.trim().toLowerCase();
       if(!channelType){
@@ -289,12 +316,15 @@ client.on("messageCreate", async (message) => {
         channelMap[channelType].push(channelId);
         saveChannelMap();
         message.reply(`✅ ${channelType} channel set to <#${channelId}>`);
+        console.log(`✅ ${channelType} channel set to <#${channelId}>`)
       } else {
         message.reply(`⚠️ Channel <#${channelId}> is already set for \`${channelType}\`.`);
+        console.log(`⚠️ Channel <#${channelId}> is already set for \`${channelType}\`.`)
       }
     break;
 
     case "removechannel": 
+      console.log(`🔃Clear Channel Command Ran. ${getTimeAndDate()}`)
       var channelType = subCommandArgs[2]?.trim().toLowerCase();
       var channelId = subCommandArgs[3]?.trim();
 
@@ -314,6 +344,7 @@ client.on("messageCreate", async (message) => {
       channelMap[channelType].splice(index, 1);
       saveChannelMap();
       message.reply(`🗑️ Removed channel <#${channelId}> from \`${channelType}\`.`);
+      console.log(`🗑️ Removed channel <#${channelId}> from \`${channelType}\`.`)
     break;
 
     case "listchannels":
@@ -332,6 +363,7 @@ client.on("messageCreate", async (message) => {
     break;
 
     case "clearchannel":
+      console.log(`🔃Clear Channel Command Ran. ${getTimeAndDate()}`)
       const typeToClear = subCommandArgs[2]?.trim().toLowerCase();
       if (!channelMap[typeToClear]) {
         return message.reply(`⚠️ Unknown channel type: \`${typeToClear}\`.`);
@@ -341,9 +373,20 @@ client.on("messageCreate", async (message) => {
       message.reply(`🧹 Cleared all channels for \`${typeToClear}\`.`);
     break;
 
+    case "force_reupdate":
+      console.log(`🔃Forced Re-Update Command Ran. ${getTimeAndDate()}`)
+      for(let CHANNEL_ID of TEST_CHANNEL_IDS){
+        const channel = await client.channels.fetch(CHANNEL_ID);
+        channel.send(`✅ Force Re-Update Successfully Ran.`);
+      }
+      await getModsByAuthor()
+      checkAllMods();
+    break;
+
     case "help":
         message.reply(`📖 **Daub Bot Commands**
       \`\`\`
+      /daub force_reupdate                  → Recheck for updates
       /daub setchannel <type> <channelId>   → Save a channel for updates
       /daub removechannel <type> <channelId> → Remove a saved channel
       /daub listchannels                    → Show all saved channels
@@ -354,7 +397,7 @@ client.on("messageCreate", async (message) => {
     break;
 
     default:
-      message.reply("⚠️ Please specify a valid subcommand (e.g., `/daub setchannel`).");
+      message.reply("⚠️ Please specify a valid subcommand (e.g., `/daub help`).");
   }
 });
 
