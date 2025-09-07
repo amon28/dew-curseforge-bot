@@ -218,9 +218,9 @@ function loadChannelMap(){
 }
 
 function loadConfig(){
-  if (fs.existsSync(CHANNEL_MAP_PATH)) {
+  if (fs.existsSync(CONFIG_FILE)) {
     try {
-      const data = fs.readFileSync(CHANNEL_MAP_PATH, 'utf8');
+      const data = fs.readFileSync(CONFIG_FILE, 'utf8');
       return JSON.parse(data);
     } catch (err) {
       console.error('Error reading save file:', err);
