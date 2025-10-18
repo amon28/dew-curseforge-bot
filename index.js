@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import { DateTime } from 'luxon';
+import {formatChangelog} from './utils/changelogFormatter.js';
 
 dotenv.config();
 
@@ -64,24 +65,6 @@ async function getModsByAuthor() {
   
   MOD_IDS = allMods.map((mod)=>mod.id)
   console.log(`🔃 Getting all addons: ${MOD_IDS.length} | ${getTimeAndDate()}`)
-}
-
-function formatChangelog(html) {
-  return html
-    // Replace list items with "- text"
-    .replace(/<li>\s*/gi, '- ')
-    .replace(/\s*<\/li>/gi, '\n')
-    // Replace paragraph tags with a single newline
-    .replace(/<p[^>]*>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    // Remove all other tags
-    .replace(/<[^>]+>/g, '')
-    // Decode HTML entities
-    .replace(/&nbsp;/gi, ' ')
-    // Collapse multiple newlines into one
-    .replace(/\n\s*\n+/g, '\n')
-    // Trim leading/trailing whitespace
-    .trim();
 }
 
 function getTimeAndDate(){
@@ -375,6 +358,59 @@ client.on("messageCreate", async (message) => {
       message.reply(`🧹 Cleared all channels for \`${typeToClear}\`.`);
     break;
 
+    case "raw_changelog":
+      var modId = subCommandArgs[2]?.trim().toLowerCase();
+      if(!modId){
+        return message.reply("⚠️ Please specify a mod ID.");
+      }
+      const filesRes = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files`, {
+        headers: { 'Accept': 'application/json', 'x-api-key': API_KEY }
+      });
+      if (!filesRes.ok) {
+        return message.reply(`❌ Failed to fetch files for ${modId}: ${filesRes.status} ${filesRes.statusText}`);
+      }
+      const filesData = await filesRes.json();
+      if (!filesData.data || filesData.data.length === 0) {
+        return message.reply(`⚠️ No files found for mod ${modId}`);
+      }
+
+      const latest = filesData.data[0];
+
+      const changelogRes = await fetch(
+        `https://api.curseforge.com/v1/mods/${modId}/files/${latest.id}/changelog`,
+        { headers: { 'Accept': 'application/json', 'x-api-key': API_KEY } }
+      );
+      const changelog = changelogRes.ok ? (await changelogRes.json()).data : "";
+      message.reply(`📜 Raw Changelog:\n\`\`\`${changelog}\`\`\``);
+    break;
+
+    case "changelog":
+      var modId = subCommandArgs[2]?.trim().toLowerCase();
+      if(!modId){
+        return message.reply("⚠️ Please specify a mod ID.");
+      }
+      const filesRes2 = await fetch(`https://api.curseforge.com/v1/mods/${modId}/files`, {
+        headers: { 'Accept': 'application/json', 'x-api-key': API_KEY }
+      });
+      if (!filesRes2.ok) {
+        return message.reply(`❌ Failed to fetch files for ${modId}: ${filesRes2.status} ${filesRes2.statusText}`);
+      }
+      const filesData2 = await filesRes2.json();
+      if (!filesData2.data || filesData2.data.length === 0) {
+        return message.reply(`⚠️ No files found for mod ${modId}`);
+      }
+
+      const latest2 = filesData2.data[0];
+
+      const changelogRes2 = await fetch(
+        `https://api.curseforge.com/v1/mods/${modId}/files/${latest2.id}/changelog`,
+        { headers: { 'Accept': 'application/json', 'x-api-key': API_KEY } }
+      );
+      const changelog2 = changelogRes2.ok ? (await changelogRes2.json()).data : "";
+      const formattedChangelog = formatChangelog(changelog2);
+      message.reply(`📜 Raw Changelog:\n${formattedChangelog}`);
+    break;
+
     case "force_reupdate":
       console.log(`🔃Forced Re-Update Command Ran. ${getTimeAndDate()}`)
       for(let CHANNEL_ID of TEST_CHANNEL_IDS){
@@ -394,6 +430,8 @@ client.on("messageCreate", async (message) => {
       /daub listchannels                    → Show all saved channels
       /daub clearchannel <type>            → Clear all channels of a type
       /daub ping                            → Pings all channel in config
+      /daub changelog <modId>               → Show formatted changelog of latest file
+      /daub raw_changelog <modId>           → Show raw changelog of latest file
       /daub help                            → Show this help message
       \`\`\``);
     break;
