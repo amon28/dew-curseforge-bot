@@ -408,7 +408,7 @@ client.on("messageCreate", async (message) => {
       );
       const changelog2 = changelogRes2.ok ? (await changelogRes2.json()).data : "";
       const formattedChangelog = formatChangelog(changelog2);
-      message.reply(`📜 Raw Changelog:\n${formattedChangelog}`);
+      message.reply(`📜 Formatted Changelog:\n${formattedChangelog}`);
     break;
 
     case "force_reupdate":
