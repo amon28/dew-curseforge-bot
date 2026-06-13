@@ -27,7 +27,22 @@ const CONFIG = loadConfig()
 const CHECK_ALL_MODS_UPDATE_TIME = CONFIG['CHECK_ALL_MODS_UPDATE_TIME']
 const REGET_ALL_MODS_TIME = CONFIG['REGET_ALL_MODS_TIME']
 
+// Validate required environment variables
+if (!process.env.DISCORD_TOKEN) {
+  console.error('❌ Missing required environment variable: DISCORD_TOKEN');
+  process.exit(1);
+}
+if (!API_KEY) {
+  console.error('❌ Missing required environment variable: CURSEFORGE_KEY');
+  process.exit(1);
+}
+if (!CREATOR_ID) {
+  console.error('❌ Missing required environment variable: CREATOR_ID');
+  process.exit(1);
+}
+
 let MOD_IDS = []
+let isCheckingMods = false // Prevent concurrent runs causing duplicates
 
 async function getRawJsonData(modId) {
   const res = await fetch(`https://api.curseforge.com/v1/mods/${modId}`, {
@@ -74,35 +89,45 @@ function getTimeAndDate(){
 }
 
 async function checkAllMods() {
-  console.log(`------------------------------------------------`)
-  console.log(`🔷 Checking Addon updates — ${getTimeAndDate()}`);
+  if (isCheckingMods) {
+    console.log("⏭️ Skipping — a check is already in progress.");
+    return;
+  }
+  isCheckingMods = true;
 
-  let anyUpdated = false; 
-  let update_success = 0
-  let no_updates = 0
+  try {
+    console.log(`------------------------------------------------`)
+    console.log(`🔷 Checking Addon updates — ${getTimeAndDate()}`);
 
-  for (const modId of MOD_IDS) {
-    try {
-      const updated = await checkModUpdates(modId);
-      if (updated) {
-        anyUpdated = true;
-        update_success++
-      }else{
-        no_updates++
+    let anyUpdated = false;
+    let update_success = 0
+    let no_updates = 0
+
+    for (const modId of MOD_IDS) {
+      try {
+        const updated = await checkModUpdates(modId);
+        if (updated) {
+          anyUpdated = true;
+          update_success++
+        }else{
+          no_updates++
+        }
+      } catch (err) {
+        console.error(`Error checking mod ${modId}:`, err);
       }
-    } catch (err) {
-      console.error(`Error checking mod ${modId}:`, err);
     }
-  }
 
-  if (!anyUpdated) {
-    console.log("ℹ️ There is no addon update.");
-  }else{
-    console.log(`➡️ Updated: ${update_success}`)
-    console.log(`➡️ No Updates: ${no_updates}`)
+    if (!anyUpdated) {
+      console.log("ℹ️ There is no addon update.");
+    }else{
+      console.log(`➡️ Updated: ${update_success}`)
+      console.log(`➡️ No Updates: ${no_updates}`)
+    }
+    update_success = 0
+    no_updates = 0
+  } finally {
+    isCheckingMods = false;
   }
-  update_success = 0
-  no_updates = 0
 }
 
 async function checkModUpdates(modId) {
@@ -111,7 +136,7 @@ async function checkModUpdates(modId) {
   });
   if (!modRes.ok) {
     console.error(`❌ Failed to fetch mod info for ${modId}: ${modRes.status} ${modRes.statusText}`);
-    return false;
+    throw new Error(`API error fetching mod ${modId}: ${modRes.status} ${modRes.statusText}`);
   }
   const modData = (await modRes.json()).data;
 
@@ -120,7 +145,7 @@ async function checkModUpdates(modId) {
   });
   if (!filesRes.ok) {
     console.error(`❌ Failed to fetch files for ${modId}: ${filesRes.status} ${filesRes.statusText}`);
-    return false;
+    throw new Error(`API error fetching files for mod ${modId}: ${filesRes.status} ${filesRes.statusText}`);
   }
   const filesData = await filesRes.json();
   if (!filesData.data || filesData.data.length === 0) {
@@ -133,12 +158,12 @@ async function checkModUpdates(modId) {
 
   // Check if new file
   if (!stored || latest.id !== stored.file_id) {
-    lastFileIds[modId] = { name: modData.name, file_id: latest.id };
-    saveLastFileIds();
 
-    // Skip if not a Bedrock addon
+    // Skip if not a Bedrock addon (save ID early to avoid re-checking non-addon files)
     if (!latest.fileName.endsWith('.mcaddon') && !latest.fileName.endsWith('.mcpack')) {
       console.log(`⚠️ Skipping ${latest.fileName} — not a Bedrock addon`);
+      lastFileIds[modId] = { name: modData.name, file_id: latest.id };
+      saveLastFileIds();
       return false;
     }
 
@@ -160,12 +185,26 @@ async function checkModUpdates(modId) {
     }
     textMsg += `\n**Downloads:**\n<:mcpedl:1409488865215123547> ${mcpedlProjectUrl}\n<:curseforge:1409489206786654388> ${curseForgeProjectUrl}`;
 
+    let postSuccess = true;
     for(let CHANNEL_ID of CHANNEL_IDS){
-      const channel = await client.channels.fetch(CHANNEL_ID);
-      await channel.send(textMsg);
-    }    
+      try {
+        const channel = await client.channels.fetch(CHANNEL_ID);
+        await channel.send(textMsg);
+      } catch (err) {
+        console.error(`❌ Failed to post to channel ${CHANNEL_ID}:`, err);
+        postSuccess = false;
+      }
+    }
 
-    console.log(`✅ Posted update for addon ${modData.name}`);
+    // Only save file ID after posting succeeds, preventing duplicates on crash/restart
+    lastFileIds[modId] = { name: modData.name, file_id: latest.id };
+    saveLastFileIds();
+
+    if (postSuccess) {
+      console.log(`✅ Posted update for addon ${modData.name}`);
+    } else {
+      console.warn(`⚠️ Partial failure posting update for addon ${modData.name}`);
+    }
     return true;
   }
   return false;
@@ -341,9 +380,11 @@ client.on("messageCreate", async (message) => {
 
     case "ping":
       const entries = Object.entries(channelMap)
-      for(let [type, id] of entries){
-        const channel = await client.channels.fetch(id);
-        channel.send(`✅Ping ${type}!`);
+      for(let [type, ids] of entries){
+        for(let channelId of ids){
+          const channel = await client.channels.fetch(channelId);
+          await channel.send(`✅Ping ${type}!`);
+        }
       }
     break;
 
@@ -421,10 +462,34 @@ client.on("messageCreate", async (message) => {
       checkAllMods();
     break;
 
+    case "test":
+      console.log(`🧪 Test Message Command Ran. ${getTimeAndDate()}`)
+      // Send to test channels
+      for (let CHANNEL_ID of TEST_CHANNEL_IDS){
+        try {
+          const channel = await client.channels.fetch(CHANNEL_ID);
+          await channel.send(`🧪 *TEST — Fake Update*\n# 📢 **Test Addon v1.0.0**\n**Changelogs:**\n- This is a test message\n- Feature A added\n- Bug B fixed\n**Downloads:**\n<:mcpedl:1409488865215123547> https://example.com/test\n<:curseforge:1409489206786654388> https://example.com/test`);
+        } catch (err) {
+          console.error(`❌ Failed to post test message to channel ${CHANNEL_ID}:`, err);
+        }
+      }
+      // Also send to announcement channels so you can verify formatting
+      for (let CHANNEL_ID of CHANNEL_IDS){
+        try {
+          const channel = await client.channels.fetch(CHANNEL_ID);
+          await channel.send(`🧪 *TEST — Fake Update*\n# 📢 **Test Addon v1.0.0**\n**Changelogs:**\n- This is a test message\n- Feature A added\n- Bug B fixed\n**Downloads:**\n<:mcpedl:1409488865215123547> https://example.com/test\n<:curseforge:1409489206786654388> https://example.com/test`);
+        } catch (err) {
+          console.error(`❌ Failed to post test message to channel ${CHANNEL_ID}:`, err);
+        }
+      }
+      message.reply('✅ Test messages sent to **test** and **announcement** channels.');
+    break;
+
     case "help":
         message.reply(`📖 **Daub Bot Commands**
       \`\`\`
       /daub force_reupdate                  → Recheck for updates
+      /daub test                            → Send a simulated fake update
       /daub setchannel <type> <channelId>   → Save a channel for updates
       /daub removechannel <type> <channelId> → Remove a saved channel
       /daub listchannels                    → Show all saved channels
